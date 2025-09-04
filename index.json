@@ -1,0 +1,19 @@
+{
+ 
+    "Tournament": {
+      "100BB Exploitative Preflop Charts": "poker_charts/tournament/100bb_exploitative.json",
+      "75BB Implementable GTO Charts": "poker_charts/tournament/75bb_gto.json",
+      "40BB Implementable GTO Charts": "poker_charts/tournament/40bb_gto.json",
+      "25BB Implementable GTO Charts": "poker_charts/tournament/25bb_gto.json",
+      "15BB Implementable GTO Charts": "poker_charts/tournament/15bb_gto.json"
+    },
+    "CashGame": {
+      "100BB 6-Max GTO": "poker_charts/cashgame/100bb_6max_gto.json",
+      "100BB Full-Ring GTO": "poker_charts/cashgame/100bb_fullring_gto.json"
+    },
+    "SpinAndGo": {
+      "25BB SPIN & GO CHARTS": "poker_charts/spinandgo/25bb_3max.json",
+      "15BB Heads-Up GTO Charts": "poker_charts/spinandgo/15bb_heads_up.json"
+    }
+ 
+}

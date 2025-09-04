@@ -1,0 +1,23 @@
+{
+  "table_size": "9max",
+  "ante": false,
+  "description": "GTO Charts for 100BB 9-Max online cash games without ante.",
+  "charts": {
+    "Raise First In (RFI)": {
+      "UTG": {
+        "AA": "Raise",
+        "KK": "Raise",
+        "QQ": "Raise",
+        "JJ": "Raise",
+        "TT": "Raise",
+        "AKs": "Raise",
+        "AQs": "Raise",
+        "AJs": "Raise",
+        "ATs": "Raise",
+        "KQs": "Raise",
+        "AKo": "Raise",
+        "AQo": "Raise"
+      }
+    }
+  }
+}
