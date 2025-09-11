@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-# Hàm sanitize_hand không thay đổi
 def sanitize_hand(hand_text):
     hand_text = hand_text.strip().lower()
     if len(hand_text) < 2 or len(hand_text) > 3:
