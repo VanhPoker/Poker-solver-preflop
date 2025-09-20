@@ -157,6 +157,7 @@ class PokerApp(QMainWindow):
         scenario = self.scenario_combo.currentText()
         hand = sanitize_hand(self.hero_hand_input.text())
         
+        
         if not self.loaded_chart_data:
             self.result_label.setText("Please select a valid chart type first.")
             return
