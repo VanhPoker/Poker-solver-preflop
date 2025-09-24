@@ -1,196 +1,349 @@
-import sys
+import customtkinter as ctk
+from tkinter import colorchooser, filedialog, messagebox
 import json
 import os
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QComboBox, QLineEdit, QPushButton, QLabel, QFormLayout
-)
-from PyQt6.QtCore import Qt
 
-def sanitize_hand(hand_text):
-    hand_text = hand_text.strip().lower()
-    if len(hand_text) < 2 or len(hand_text) > 3:
-        return None
-    card1 = hand_text[0].upper()
-    card2 = hand_text[1].upper()
-    ranks = "AKQJT98765432"
-    if ranks.find(card1) > ranks.find(card2):
-        card1, card2 = card2, card1
-    if len(hand_text) == 2:
-        return f"{card1}{card2}o" if card1 != card2 else f"{card1}{card2}"
-    if len(hand_text) == 3:
-        if hand_text[2] == 's':
-            return f"{card1}{card2}s"
-        elif hand_text[2] == 'o':
-            return f"{card1}{card2}o"
-    return None
+# --- LỚP CỬA SỔ CHỈNH SỬA BIỂU ĐỒ ---
+class ChartEditorWindow(ctk.CTkToplevel):
+    def __init__(self, master, file_path, chart_name, chart_state, actions):
+        super().__init__(master)
 
-class PokerApp(QMainWindow):
+        self.title(f"Chỉnh sửa: {chart_name}")
+        self.geometry("900x700")
+        self.transient(master)
+        self.grab_set()
+
+        self.master_app = master
+        self.file_path = file_path
+        self.chart_name = chart_name
+        
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # --- App State for this window ---
+        self.RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
+        self.actions = actions
+        self.current_chart_state = chart_state
+        self.selected_action_label = actions[0]['label'] if actions else None
+        self.hand_buttons = {}
+
+        self._create_widgets()
+        self.update_actions_ui()
+        self.update_grid_ui()
+
+    def _create_widgets(self):
+        # --- Control Frame (Left) ---
+        self.control_frame = ctk.CTkFrame(self, width=250)
+        self.control_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        self.control_frame.grid_propagate(False)
+        
+        ctk.CTkLabel(self.control_frame, text=self.chart_name, font=ctk.CTkFont(size=16, weight="bold"), wraplength=230).pack(pady=10, padx=10, fill="x")
+
+        # Actions Section
+        actions_frame = ctk.CTkFrame(self.control_frame, fg_color="transparent")
+        actions_frame.pack(pady=10, padx=10, fill="x", expand=True)
+        ctk.CTkLabel(actions_frame, text="Hành Động", font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(0, 10))
+        self.actions_list_frame = ctk.CTkScrollableFrame(actions_frame, height=250)
+        self.actions_list_frame.pack(fill="x", expand=True)
+        
+        # Management Section
+        mgmt_frame = ctk.CTkFrame(self.control_frame, fg_color="transparent")
+        mgmt_frame.pack(pady=10, padx=10, fill="x")
+        ctk.CTkButton(mgmt_frame, text="Lưu thay đổi & Đóng", command=self._save_and_close).pack(fill="x", pady=5)
+        ctk.CTkButton(mgmt_frame, text="Hủy bỏ", fg_color="#71717a", hover_color="#52525b", command=self.destroy).pack(fill="x", pady=5)
+        
+        # --- Grid Frame (Right) ---
+        self.grid_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.grid_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        for i in range(13):
+            self.grid_frame.grid_columnconfigure(i, weight=1)
+            self.grid_frame.grid_rowconfigure(i, weight=1)
+        self._create_grid()
+        
+    def _create_grid(self):
+        # (Same as PokerChartApp)
+        for i, rank1 in enumerate(self.RANKS):
+            for j, rank2 in enumerate(self.RANKS):
+                hand = ""
+                if i < j: hand = f"{rank1}{rank2}s"
+                elif i > j: hand = f"{rank2}{rank1}o"
+                else: hand = f"{rank1}{rank2}"
+                button = ctk.CTkButton(self.grid_frame, text=hand,
+                                       command=lambda h=hand: self._hand_button_click(h),
+                                       font=ctk.CTkFont(size=11, weight="bold"))
+                button.grid(row=i, column=j, padx=1, pady=1, sticky="nsew")
+                self.hand_buttons[hand] = button
+
+    def _save_and_close(self):
+        try:
+            # Read the entire original file
+            with open(self.file_path, 'r', encoding='utf-8') as f:
+                full_data = json.load(f)
+
+            # Find the chart name and update it with the new state
+            if self.chart_name in full_data:
+                full_data[self.chart_name] = self.current_chart_state
+            else:
+                 # This case handles different structures, like the nested one.
+                 # We need to find the correct path to update.
+                 # For simplicity, this example assumes a flat structure for the save target.
+                 # A more robust solution would require passing the full key path.
+                 # For this implementation, we will assume the chart_name is a top-level key.
+                 # Let's adjust for the provided example format
+                 main_sit, scenario = self.chart_name.split(" | ")
+                 full_data["charts"][main_sit][scenario] = self.current_chart_state
+            
+            # Write the entire modified data back to the file
+            with open(self.file_path, 'w', encoding='utf-8') as f:
+                json.dump(full_data, f, indent=4)
+            
+            messagebox.showinfo("Thành công", f"Đã lưu thay đổi vào file:\n{self.file_path}", parent=self)
+            self.master_app.load_specific_chart(self.file_path, reload_ui=True) # Reload data in main app
+            self.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể lưu file: {e}", parent=self)
+
+    # All other methods like update_actions_ui, update_grid_ui, _hand_button_click, etc.
+    # are very similar to the original PokerChartApp, adapted for this Toplevel window.
+    def update_actions_ui(self):
+        for widget in self.actions_list_frame.winfo_children():
+            widget.destroy()
+
+        for action in self.actions:
+            button = ctk.CTkButton(self.actions_list_frame, text=action['label'],
+                                   fg_color=action['color'],
+                                   text_color=self._get_contrast_color(action['color']),
+                                   hover=False,
+                                   command=lambda l=action['label']: self._select_action(l))
+            if action['label'] == self.selected_action_label:
+                button.configure(border_width=3, border_color="#3b82f6")
+            button.pack(fill="x", padx=5, pady=3)
+
+    def update_grid_ui(self):
+        for hand, button in self.hand_buttons.items():
+            action_label = self.current_chart_state.get(hand)
+            if action_label:
+                action = next((a for a in self.actions if a['label'] == action_label), None)
+                if action:
+                    button.configure(fg_color=action['color'], text_color=self._get_contrast_color(action['color']))
+                else:
+                    button.configure(fg_color=ctk.ThemeManager.theme["CTkButton"]["fg_color"], text_color=ctk.ThemeManager.theme["CTkButton"]["text_color"])
+            else:
+                 button.configure(fg_color=ctk.ThemeManager.theme["CTkButton"]["fg_color"], text_color=ctk.ThemeManager.theme["CTkButton"]["text_color"])
+
+    def _select_action(self, label):
+        self.selected_action_label = label
+        self.update_actions_ui()
+
+    def _hand_button_click(self, hand):
+        if not self.selected_action_label: return
+        if self.current_chart_state.get(hand) == self.selected_action_label:
+            del self.current_chart_state[hand]
+        else:
+            self.current_chart_state[hand] = self.selected_action_label
+        self.update_grid_ui()
+
+    def _get_contrast_color(self, hex_color):
+        if hex_color is None: return "#000000"
+        hex_color = hex_color.lstrip('#')
+        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000
+        return '#000000' if yiq >= 128 else '#FFFFFF'
+
+# --- LỚP ỨNG DỤNG CHÍNH (TRA CỨU) ---
+class PokerToolSuite(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Poker Pre-flop Decision Assistant")
-        self.setGeometry(100, 100, 550, 500)
-        
-        # Biến mới để lưu dữ liệu chart đã được tải
-        self.loaded_chart_data = None
-        
-        # Tải file chỉ mục
-        self.chart_index = self.load_chart_index()
-        
-        self.initUI()
+        self.title("Bộ Công Cụ Poker")
+        self.geometry("600x550")
 
-    def load_chart_index(self):
-        """Hàm mới: Tải file index.json để biết cấu trúc file."""
+        self.loaded_chart_data = None
+        self.current_file_path = None
+        self.chart_index = self._load_chart_index()
+        
+        self._init_ui()
+
+    def _init_ui(self):
+        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+        # Dropdowns
+        ctk.CTkLabel(main_frame, text="Game Type:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.game_type_combo = ctk.CTkComboBox(main_frame, values=list(self.chart_index.keys()), command=self.update_chart_types)
+        self.game_type_combo.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+        ctk.CTkLabel(main_frame, text="Chart Type:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.chart_type_combo = ctk.CTkComboBox(main_frame, values=[], command=self.update_main_situations)
+        self.chart_type_combo.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+
+        ctk.CTkLabel(main_frame, text="Main Situation:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.main_situation_combo = ctk.CTkComboBox(main_frame, values=[], command=self.update_scenarios)
+        self.main_situation_combo.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+
+        ctk.CTkLabel(main_frame, text="Specific Scenario:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        self.scenario_combo = ctk.CTkComboBox(main_frame, values=[])
+        self.scenario_combo.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+
+        # View/Edit Button
+        self.edit_chart_btn = ctk.CTkButton(main_frame, text="Xem / Chỉnh Sửa Chart", command=self.open_chart_editor, state="disabled")
+        self.edit_chart_btn.grid(row=4, column=0, columnspan=2, padx=5, pady=10, sticky="ew")
+
+        # Hand Input
+        ctk.CTkLabel(main_frame, text="Your Hand:").grid(row=5, column=0, padx=5, pady=5, sticky="w")
+        self.hero_hand_input = ctk.CTkEntry(main_frame, placeholder_text="e.g., AKs, 77, T9o")
+        self.hero_hand_input.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
+
+        # Get Decision Button
+        get_decision_btn = ctk.CTkButton(main_frame, text="Get Decision", command=self.get_decision)
+        get_decision_btn.grid(row=6, column=0, columnspan=2, padx=5, pady=10, sticky="ew")
+
+        # Result Label
+        self.result_label = ctk.CTkLabel(main_frame, text="Welcome! Please select your scenario.", height=80, wraplength=500, fg_color="#e5e7e9", text_color="#7f8c8d", corner_radius=6)
+        self.result_label.grid(row=7, column=0, columnspan=2, padx=5, pady=10, sticky="nsew")
+
+        main_frame.grid_columnconfigure(1, weight=1)
+        main_frame.grid_rowconfigure(7, weight=1)
+
+        # Initial population
+        self.update_chart_types(self.game_type_combo.get())
+
+    def _load_chart_index(self):
         try:
-            # Giả định index.json nằm cùng thư mục với poker_app.py
             with open("index.json", "r", encoding='utf-8') as f:
                 return json.load(f)
-        except FileNotFoundError:
-            print("Lỗi: Không tìm thấy file index.json!")
-            return {"Error": {"NoIndex": {}}}
-        except json.JSONDecodeError:
-            print("Lỗi: File index.json không đúng định dạng!")
-            return {"Error": {"InvalidIndex": {}}}
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể tải index.json: {e}")
+            return {}
 
-    def load_specific_chart(self, file_path):
-        """Hàm mới: Tải một file chart cụ thể khi người dùng chọn."""
+    def load_specific_chart(self, file_path, reload_ui=False):
         try:
             with open(file_path, "r", encoding='utf-8') as f:
                 self.loaded_chart_data = json.load(f)
-                return True
-        except FileNotFoundError:
-            print(f"Lỗi: Không tìm thấy file chart tại '{file_path}'!")
+            self.current_file_path = file_path
+            if reload_ui:
+                self.update_main_situations(self.chart_type_combo.get(), force_reload=True)
+            return True
+        except Exception as e:
             self.loaded_chart_data = None
+            self.current_file_path = None
+            messagebox.showerror("Lỗi", f"Không thể tải file chart '{file_path}': {e}")
             return False
-        except json.JSONDecodeError:
-            print(f"Lỗi: File chart '{file_path}' không đúng định dạng!")
-            self.loaded_chart_data = None
-            return False
-
-    def initUI(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        
-        form_layout = QFormLayout()
-        main_layout.addLayout(form_layout)
-
-        self.game_type_combo = QComboBox()
-        self.chart_type_combo = QComboBox()
-        self.main_situation_combo = QComboBox()
-        self.scenario_combo = QComboBox()
-        
-        form_layout.addRow("Game Type:", self.game_type_combo)
-        form_layout.addRow("Chart Type:", self.chart_type_combo)
-        form_layout.addRow("Main Situation:", self.main_situation_combo)
-        form_layout.addRow("Specific Scenario:", self.scenario_combo)
-        
-        self.hero_pos_label = QLabel("-")
-        self.hero_pos_label.setStyleSheet("font-weight: bold;")
-        form_layout.addRow("Your Position:", self.hero_pos_label)
-        
-        self.hero_hand_input = QLineEdit()
-        self.hero_hand_input.setPlaceholderText("e.g., AKs, 77, T9o")
-        form_layout.addRow("Your Hand:", self.hero_hand_input)
-
-        get_decision_btn = QPushButton("Get Decision")
-        get_decision_btn.setStyleSheet("font-size: 16px; padding: 10px; background-color: #3498db; color: white;")
-        main_layout.addWidget(get_decision_btn, 0, Qt.AlignmentFlag.AlignCenter)
-
-        self.result_label = QLabel("Welcome! Please select your scenario.")
-        self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.result_label.setWordWrap(True)
-        self.result_label.setStyleSheet("font-size: 16px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; background-color: #f0f0f0; min-height: 60px;")
-        main_layout.addWidget(self.result_label)
-
-        # --- Kết nối Signals & Slots ---
-        self.game_type_combo.currentTextChanged.connect(self.update_chart_types)
-        self.chart_type_combo.currentTextChanged.connect(self.update_main_situations)
-        self.main_situation_combo.currentTextChanged.connect(self.update_scenarios)
-        self.scenario_combo.currentTextChanged.connect(self.update_hero_display)
-        get_decision_btn.clicked.connect(self.get_decision)
-
-        # Khởi tạo UI từ file index
-        self.game_type_combo.addItems(self.chart_index.keys())
 
     def update_chart_types(self, game_type):
-        self.chart_type_combo.clear()
-        if game_type in self.chart_index:
-            self.chart_type_combo.addItems(self.chart_index[game_type].keys())
+        self.chart_type_combo.configure(values=list(self.chart_index.get(game_type, {}).keys()))
+        self.chart_type_combo.set("")
+        self.main_situation_combo.set("")
+        self.scenario_combo.set("")
+        self.edit_chart_btn.configure(state="disabled")
 
-    def update_main_situations(self, chart_type):
-        self.main_situation_combo.clear()
-        self.scenario_combo.clear() # Xóa luôn scenario con
-        
-        game_type = self.game_type_combo.currentText()
-        if not chart_type or not game_type:
+    def update_main_situations(self, chart_type, force_reload=False):
+        if not chart_type and not force_reload:
+            self.main_situation_combo.configure(values=[])
+            self.main_situation_combo.set("")
+            self.scenario_combo.set("")
+            self.edit_chart_btn.configure(state="disabled")
             return
 
-        # Lấy đường dẫn file và tải dữ liệu
-        file_path = self.chart_index[game_type].get(chart_type)
+        game_type = self.game_type_combo.get()
+        file_path = self.chart_index.get(game_type, {}).get(chart_type)
+        
         if file_path and self.load_specific_chart(file_path):
             chart_data = self.loaded_chart_data.get("charts", {})
-            self.main_situation_combo.addItems(chart_data.keys())
+            self.main_situation_combo.configure(values=list(chart_data.keys()))
         else:
-            self.hero_pos_label.setText("Error loading chart file!")
+            self.main_situation_combo.configure(values=[])
+        
+        self.main_situation_combo.set("")
+        self.scenario_combo.set("")
+        self.edit_chart_btn.configure(state="disabled")
+
 
     def update_scenarios(self, main_situation):
-        self.scenario_combo.clear()
         if not main_situation or not self.loaded_chart_data:
+            self.scenario_combo.configure(values=[])
+            self.scenario_combo.set("")
+            self.edit_chart_btn.configure(state="disabled")
             return
             
         scenarios = self.loaded_chart_data["charts"].get(main_situation, {})
-        self.scenario_combo.addItems(scenarios.keys())
+        self.scenario_combo.configure(values=list(scenarios.keys()))
+        self.scenario_combo.set("")
+        self.edit_chart_btn.configure(state="disabled" if not list(scenarios.keys()) else "normal")
 
-    def update_hero_display(self, scenario):
-        main_situation = self.main_situation_combo.currentText()
-        hero_pos = "N/A"
-        if scenario:
-            if main_situation == "Raise First In (RFI)":
-                hero_pos = scenario
-            elif "_vs_" in scenario:
-                hero_pos = scenario.split('_vs_')[0]
-        self.hero_pos_label.setText(hero_pos)
+    def open_chart_editor(self):
+        main_situation = self.main_situation_combo.get()
+        scenario = self.scenario_combo.get()
+        if not all([self.current_file_path, main_situation, scenario, self.loaded_chart_data]):
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn đầy đủ kịch bản trước khi chỉnh sửa.")
+            return
 
+        chart_state = self.loaded_chart_data["charts"][main_situation].get(scenario, {})
+        
+        # Create a comprehensive, color-coded action list if not present in the main JSON file.
+        actions = self.loaded_chart_data.get("actions", [
+            {'label': 'Raise', 'color': '#f87171'},
+            {'label': 'Raise for value', 'color': '#dc2626'},
+            {'label': 'Raise as a bluff', 'color': '#9333ea'},
+            {'label': '3-bet for value', 'color': '#ef4444'},
+            {'label': '3-bet as a bluff', 'color': '#8b5cf6'},
+            {'label': '4-bet for value', 'color': '#b91c1c'},
+            {'label': '4-bet as a bluff', 'color': '#7e22ce'},
+            {'label': 'Call', 'color': '#22c55e'},
+            {'label': 'Limp', 'color': '#22c55e'},
+            {'label': 'Fold', 'color': '#a1a1aa'}
+        ])
+        
+        chart_name = f"{main_situation} | {scenario}"
+        
+        editor = ChartEditorWindow(self, self.current_file_path, chart_name, chart_state, actions)
+        
     def get_decision(self):
-        main_situation = self.main_situation_combo.currentText()
-        scenario = self.scenario_combo.currentText()
-        hand = sanitize_hand(self.hero_hand_input.text())
+        main_situation = self.main_situation_combo.get()
+        scenario = self.scenario_combo.get()
+        hand_text = self.hero_hand_input.get()
         
-        
-        if not self.loaded_chart_data:
-            self.result_label.setText("Please select a valid chart type first.")
-            return
-
         if not all([main_situation, scenario]):
-            self.result_label.setText("Please make a selection in all dropdowns.")
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn đầy đủ kịch bản.")
             return
-
-        if not hand:
-            self.result_label.setText("Invalid Hand Format! (e.g., AKs, 77, T9o)")
-            return
-
-        try:
-            action = self.loaded_chart_data["charts"][main_situation][scenario][hand]
-            self.result_label.setText(action)
             
-            # (Phần style cho kết quả không thay đổi)
-            if any(act in action for act in ["Raise", "3-Bet", "4-Bet"]):
-                self.result_label.setStyleSheet("font-size: 20px; font-weight: bold; padding: 15px; border: 2px solid #e74c3c; border-radius: 5px; background-color: #f5b7b1; color: #c0392b;")
-            elif any(act in action for act in ["Call", "Check"]):
-                 self.result_label.setStyleSheet("font-size: 20px; font-weight: bold; padding: 15px; border: 2px solid #2ecc71; border-radius: 5px; background-color: #abebc6; color: #28b463;")
-            elif "Limp" in action:
-                self.result_label.setStyleSheet("font-size: 20px; font-weight: bold; padding: 15px; border: 2px solid #f39c12; border-radius: 5px; background-color: #fdebd0; color: #d68910;")
-            else: # Fold
-                self.result_label.setStyleSheet("font-size: 20px; font-weight: bold; padding: 15px; border: 2px solid #95a5a6; border-radius: 5px; background-color: #e5e7e9; color: #7f8c8d;")
+        if not hand_text:
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng nhập hand bài của bạn.")
+            return
+            
+        hand = self._sanitize_hand(hand_text)
+        if not hand:
+            messagebox.showerror("Lỗi", "Định dạng hand không hợp lệ! (VD: AKs, 77, T9o)")
+            return
 
-        except KeyError:
-            action = "Fold"
-            self.result_label.setText(f"{action} (Hand not in range)")
-            self.result_label.setStyleSheet("font-size: 20px; font-weight: bold; padding: 15px; border: 2px solid #95a5a6; border-radius: 5px; background-color: #e5e7e9; color: #7f8c8d;")
+        action = self.loaded_chart_data["charts"][main_situation][scenario].get(hand, "Fold")
+        self.result_label.configure(text=f"Hành động: {action}")
+        # Add styling based on action... (optional)
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = PokerApp()
-    window.show()
-    sys.exit(app.exec())
+    def _sanitize_hand(self, hand_text):
+        hand_text = hand_text.strip()
+        if len(hand_text) < 2 or len(hand_text) > 3: return None
+        
+        ranks = "AKQJT98765432"
+        card1 = hand_text[0].upper()
+        card2 = hand_text[1].upper()
+        if card1 not in ranks or card2 not in ranks: return None
+        
+        # Ensure consistent order (e.g., AKs, not KAs)
+        if ranks.find(card1) > ranks.find(card2):
+            card1, card2 = card2, card1
+        
+        if len(hand_text) == 2:
+            return f"{card1}{card2}" if card1 == card2 else f"{card1}{card2}o"
+        
+        suffix = hand_text[2].lower()
+        if suffix == 's' and card1 != card2: return f"{card1}{card2}s"
+        if suffix == 'o' and card1 != card2: return f"{card1}{card2}o"
+        
+        return None
+
+if __name__ == "__main__":
+    ctk.set_appearance_mode("System")
+    ctk.set_default_color_theme("blue")
+    app = PokerToolSuite()
+    app.mainloop()
